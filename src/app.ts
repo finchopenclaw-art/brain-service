@@ -3,7 +3,8 @@ import { getEmbedding } from './embeddings.js';
 import { extractMetadata } from './metadata.js';
 import { insertThought, searchThoughts, listThoughts, getStats } from './thoughts.js';
 
-const BRAIN_KEY = process.env.BRAIN_KEY!;
+const BRAIN_KEY = process.env.BRAIN_KEY;
+if (!BRAIN_KEY) throw new Error('BRAIN_KEY environment variable is required');
 
 export const app = new Hono();
 
@@ -16,7 +17,11 @@ app.use('*', async (c, next) => {
 
 // REST: POST /api/thoughts
 app.post('/api/thoughts', async (c) => {
-  const body = await c.req.json() as { content?: string; source?: string };
+  const raw = await c.req.json();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return c.json({ error: 'Request body must be a JSON object' }, 400);
+  }
+  const body = raw as { content?: string; source?: string };
   if (!body.content) return c.json({ error: 'content is required' }, 400);
   const source = body.source ?? 'platform';
   const [embedding, metadata] = await Promise.all([
@@ -32,7 +37,9 @@ app.get('/api/thoughts/search', async (c) => {
   const q = c.req.query('q');
   if (!q) return c.json({ error: 'q is required' }, 400);
   const limit = parseInt(c.req.query('limit') ?? '10');
+  if (isNaN(limit) || limit < 1) return c.json({ error: 'limit must be a positive integer' }, 400);
   const threshold = parseFloat(c.req.query('threshold') ?? '0.5');
+  if (isNaN(threshold) || threshold < 0 || threshold > 1) return c.json({ error: 'threshold must be between 0 and 1' }, 400);
   const source = c.req.query('source');
   const embedding = await getEmbedding(q);
   const results = await searchThoughts(embedding, limit, threshold, source);
@@ -48,11 +55,14 @@ app.get('/api/thoughts/stats', async (c) => {
 // REST: GET /api/thoughts
 app.get('/api/thoughts', async (c) => {
   const limit = parseInt(c.req.query('limit') ?? '20');
+  if (isNaN(limit) || limit < 1) return c.json({ error: 'limit must be a positive integer' }, 400);
   const source = c.req.query('source');
   const type = c.req.query('type');
   const topic = c.req.query('topic');
   const daysRaw = c.req.query('days');
-  const days = daysRaw ? parseInt(daysRaw) : undefined;
+  const daysNum = daysRaw ? parseInt(daysRaw) : undefined;
+  if (daysNum !== undefined && (isNaN(daysNum) || daysNum < 1)) return c.json({ error: 'days must be a positive integer' }, 400);
+  const days = daysNum;
   const thoughts = await listThoughts({ limit, source, type, topic, days });
   return c.json({ thoughts, total: thoughts.length });
 });
