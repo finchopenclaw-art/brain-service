@@ -24,14 +24,11 @@ app.post('/api/thoughts', async (c) => {
   const body = raw as { content?: string; source?: string };
   if (!body.content) return c.json({ error: 'content is required' }, 400);
   const source = body.source ?? 'platform';
-  console.log('[POST /api/thoughts] Starting embedding + metadata...');
   const [embedding, metadata] = await Promise.all([
-    getEmbedding(body.content).then(r => { console.log('[POST] embedding done'); return r; }),
-    extractMetadata(body.content).then(r => { console.log('[POST] metadata done'); return r; }),
+    getEmbedding(body.content),
+    extractMetadata(body.content),
   ]);
-  console.log('[POST] Inserting thought...');
   const id = await insertThought(body.content, embedding, { ...metadata, source }, source);
-  console.log('[POST] Done, id:', id);
   return c.json({ id, type: metadata.type, topics: metadata.topics, captured: true }, 201);
 });
 
