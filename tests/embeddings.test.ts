@@ -1,18 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const mockOpenAICreate = vi.fn().mockResolvedValue({
-  data: [{ embedding: [0.1, 0.2, 0.3] }],
-});
+const mockFetch = vi.fn();
+vi.stubGlobal('fetch', mockFetch);
+
 const mockAnthropicCreate = vi.fn().mockResolvedValue({
   content: [{ type: 'text', text: '{}' }],
-});
-
-vi.mock('openai', () => {
-  return {
-    default: class MockOpenAI {
-      embeddings = { create: mockOpenAICreate };
-    },
-  };
 });
 
 vi.mock('@anthropic-ai/sdk', () => {
@@ -28,15 +20,25 @@ const { extractMetadata } = await import('../src/metadata.js');
 
 describe('getEmbedding', () => {
   beforeEach(() => {
-    mockOpenAICreate.mockClear();
+    mockFetch.mockClear();
   });
 
   it('returns a number array from OpenRouter', async () => {
-    mockOpenAICreate.mockResolvedValueOnce({
-      data: [{ embedding: [0.1, 0.2, 0.3] }],
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ data: [{ embedding: [0.1, 0.2, 0.3] }] }),
     });
     const result = await getEmbedding('hello world');
     expect(result).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it('throws on non-ok response', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      statusText: 'Too Many Requests',
+    });
+    await expect(getEmbedding('test')).rejects.toThrow('Embedding API error: 429');
   });
 });
 
