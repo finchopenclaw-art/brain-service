@@ -6,11 +6,13 @@ import { mcpServer } from './mcp.js';
 
 const PORT = parseInt(process.env.PORT ?? '3002');
 
-// Mount MCP on /mcp path
+// Mount MCP on /mcp path — single transport, connected once at startup
+const mcpTransport = new StreamableHTTPTransport({ sessionIdGenerator: undefined });
+await mcpServer.connect(mcpTransport);
+
 app.all('/mcp', async (c) => {
-  const transport = new StreamableHTTPTransport();
-  await mcpServer.connect(transport);
-  return transport.handleRequest(c);
+  const res = await mcpTransport.handleRequest(c);
+  return res ?? c.text('', 405);
 });
 
 serve({ fetch: app.fetch, port: PORT }, () => {
