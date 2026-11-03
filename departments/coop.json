@@ -1,0 +1,20 @@
+{
+  "department": "coop",
+  "label": "Co-op purchasing",
+  "note": "Candidate searches for seeding brain_coop from Scott's brain (card #271). Every candidate is reviewed by Scott before it is copied.",
+  "queries": [
+    "co-op purchasing vendor files and uploads",
+    "co-op savings calculation canonical savings",
+    "vendor category map coop classification",
+    "co-op invoices lag fiscal year",
+    "co-op admin fee benefit Amazon Apple",
+    "CDW School Specialty Edge Public vendor file",
+    "Sourcewell contract vehicle purchases",
+    "quarterly vendor uploads Kelly audit",
+    "US Foods Region 9 child nutrition co-op",
+    "co-op board report member savings"
+  ],
+  "topics": ["coop", "co-op", "Co-op", "cooperative purchasing", "vendor", "vendors", "savings", "Sourcewell"],
+  "threshold": 0.45,
+  "per_query": 40
+}

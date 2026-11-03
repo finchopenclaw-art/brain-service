@@ -1,4 +1,8 @@
 import { pool } from './db.js';
+import { assertSchema } from './context.js';
+
+/** Every function takes the brain's schema first; it is validated, then quoted. */
+const T = (schema: string) => `"${assertSchema(schema)}".thoughts`;
 
 export interface ThoughtRow {
   id: string;
@@ -31,13 +35,14 @@ export interface Stats {
 }
 
 export async function insertThought(
+  schema: string,
   content: string,
   embedding: number[],
   metadata: Record<string, unknown>,
   source: string
 ): Promise<string> {
   const result = await pool.query(
-    `INSERT INTO brain.thoughts (content, embedding, metadata, source)
+    `INSERT INTO ${T(schema)} (content, embedding, metadata, source)
      VALUES ($1, $2::vector, $3, $4)
      RETURNING id`,
     [content, `[${embedding.join(',')}]`, JSON.stringify(metadata), source]
@@ -46,6 +51,7 @@ export async function insertThought(
 }
 
 export async function searchThoughts(
+  schema: string,
   queryEmbedding: number[],
   limit = 10,
   threshold = 0.5,
@@ -56,7 +62,7 @@ export async function searchThoughts(
   let sql = `
     SELECT id, content, metadata, source, created_at,
            1 - (embedding <=> $1::vector) AS similarity
-    FROM brain.thoughts
+    FROM ${T(schema)}
     WHERE 1 - (embedding <=> $1::vector) >= $3`;
   if (source) {
     params.push(source);
@@ -67,10 +73,10 @@ export async function searchThoughts(
   return result.rows as SearchResult[];
 }
 
-export async function listThoughts(filters: ListFilters): Promise<ThoughtRow[]> {
+export async function listThoughts(schema: string, filters: ListFilters): Promise<ThoughtRow[]> {
   const { limit = 20, type, topic, person, days, source } = filters;
   const params: unknown[] = [limit];
-  let sql = `SELECT id, content, metadata, source, created_at FROM brain.thoughts WHERE 1=1`;
+  let sql = `SELECT id, content, metadata, source, created_at FROM ${T(schema)} WHERE 1=1`;
   if (type) {
     params.push(JSON.stringify({ type }));
     sql += ` AND metadata @> $${params.length}::jsonb`;
@@ -96,11 +102,11 @@ export async function listThoughts(filters: ListFilters): Promise<ThoughtRow[]> 
   return result.rows as ThoughtRow[];
 }
 
-export async function getStats(): Promise<Stats> {
+export async function getStats(schema: string): Promise<Stats> {
   const countRes = await pool.query(
-    `SELECT COUNT(*)::int AS total, MIN(created_at) AS oldest, MAX(created_at) AS newest FROM brain.thoughts`
+    `SELECT COUNT(*)::int AS total, MIN(created_at) AS oldest, MAX(created_at) AS newest FROM ${T(schema)}`
   );
-  const metaRes = await pool.query(`SELECT metadata FROM brain.thoughts`);
+  const metaRes = await pool.query(`SELECT metadata FROM ${T(schema)}`);
   const types: Record<string, number> = {};
   const topics: Record<string, number> = {};
   const people: Record<string, number> = {};

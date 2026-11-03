@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 process.env.BRAIN_KEY = 'test-brain-key';
 
+vi.mock('../src/db.js', () => ({ pool: { query: vi.fn(async () => ({ rows: [] })) } }));
 vi.mock('../src/embeddings.js', () => ({ getEmbedding: vi.fn() }));
 vi.mock('../src/metadata.js', () => ({ extractMetadata: vi.fn() }));
 vi.mock('../src/thoughts.js', () => ({

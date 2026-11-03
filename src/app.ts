@@ -2,17 +2,22 @@ import { Hono } from 'hono';
 import { getEmbedding } from './embeddings.js';
 import { extractMetadata } from './metadata.js';
 import { insertThought, searchThoughts, listThoughts, getStats } from './thoughts.js';
+import { resolveKey } from './keys.js';
+import { runWithBrain, currentBrain, captureMetadata } from './context.js';
 
-const BRAIN_KEY = process.env.BRAIN_KEY;
-if (!BRAIN_KEY) throw new Error('BRAIN_KEY environment variable is required');
+if (!process.env.BRAIN_KEY) throw new Error('BRAIN_KEY environment variable is required');
 
 export const app = new Hono();
 
-// Auth middleware — applies to all routes
+// Auth middleware — applies to all routes. The key picks the brain (card #271):
+// the original BRAIN_KEY is `brain`, a department key is its own `brain_<dept>`.
+// `?key=` is accepted as well as the header because claude.ai custom connectors
+// can only carry a key in the URL (the way Open Brain's connector works).
 app.use('*', async (c, next) => {
-  const key = c.req.header('x-brain-key');
-  if (!key || key !== BRAIN_KEY) return c.json({ error: 'Unauthorized' }, 401);
-  await next();
+  const key = c.req.header('x-brain-key') ?? c.req.query('key');
+  const ctx = await resolveKey(key);
+  if (!ctx) return c.json({ error: 'Unauthorized' }, 401);
+  await runWithBrain(ctx, () => next());
 });
 
 // REST: POST /api/thoughts
@@ -28,7 +33,7 @@ app.post('/api/thoughts', async (c) => {
     getEmbedding(body.content),
     extractMetadata(body.content),
   ]);
-  const id = await insertThought(body.content, embedding, { ...metadata, source }, source);
+  const id = await insertThought(currentBrain().schema, body.content, embedding, captureMetadata(metadata, source), source);
   return c.json({ id, type: metadata.type, topics: metadata.topics, captured: true }, 201);
 });
 
@@ -42,13 +47,13 @@ app.get('/api/thoughts/search', async (c) => {
   if (isNaN(threshold) || threshold < 0 || threshold > 1) return c.json({ error: 'threshold must be between 0 and 1' }, 400);
   const source = c.req.query('source');
   const embedding = await getEmbedding(q);
-  const results = await searchThoughts(embedding, limit, threshold, source);
+  const results = await searchThoughts(currentBrain().schema, embedding, limit, threshold, source);
   return c.json({ results });
 });
 
 // REST: GET /api/thoughts/stats  (must be before /api/thoughts)
 app.get('/api/thoughts/stats', async (c) => {
-  const stats = await getStats();
+  const stats = await getStats(currentBrain().schema);
   return c.json(stats);
 });
 
@@ -63,6 +68,6 @@ app.get('/api/thoughts', async (c) => {
   const daysNum = daysRaw ? parseInt(daysRaw) : undefined;
   if (daysNum !== undefined && (isNaN(daysNum) || daysNum < 1)) return c.json({ error: 'days must be a positive integer' }, 400);
   const days = daysNum;
-  const thoughts = await listThoughts({ limit, source, type, topic, days });
+  const thoughts = await listThoughts(currentBrain().schema, { limit, source, type, topic, days });
   return c.json({ thoughts, total: thoughts.length });
 });
