@@ -47,13 +47,13 @@ app.get('/api/thoughts/search', async (c) => {
   if (isNaN(threshold) || threshold < 0 || threshold > 1) return c.json({ error: 'threshold must be between 0 and 1' }, 400);
   const source = c.req.query('source');
   const embedding = await getEmbedding(q);
-  const results = await searchThoughts(currentBrain().schema, embedding, limit, threshold, source);
+  const results = await searchThoughts(currentBrain().read, embedding, limit, threshold, source);
   return c.json({ results });
 });
 
 // REST: GET /api/thoughts/stats  (must be before /api/thoughts)
 app.get('/api/thoughts/stats', async (c) => {
-  const stats = await getStats(currentBrain().schema);
+  const stats = await getStats(currentBrain().read);
   return c.json(stats);
 });
 
@@ -68,6 +68,6 @@ app.get('/api/thoughts', async (c) => {
   const daysNum = daysRaw ? parseInt(daysRaw) : undefined;
   if (daysNum !== undefined && (isNaN(daysNum) || daysNum < 1)) return c.json({ error: 'days must be a positive integer' }, 400);
   const days = daysNum;
-  const thoughts = await listThoughts(currentBrain().schema, { limit, source, type, topic, days });
+  const thoughts = await listThoughts(currentBrain().read, { limit, source, type, topic, days });
   return c.json({ thoughts, total: thoughts.length });
 });

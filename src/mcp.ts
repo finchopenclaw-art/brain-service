@@ -45,7 +45,7 @@ export function buildMcpServer(): McpServer {
   }, async ({ query, limit, threshold }) => {
     try {
       const embedding = await getEmbedding(query);
-      const results = await searchThoughts(currentBrain().schema, embedding, limit, threshold);
+      const results = await searchThoughts(currentBrain().read, embedding, limit, threshold);
       if (!results.length) return { content: [{ type: 'text' as const, text: `No thoughts found matching "${query}".` }] };
       const formatted = results.map((t, i) => {
         const m = t.metadata;
@@ -78,7 +78,7 @@ export function buildMcpServer(): McpServer {
     },
   }, async ({ limit, type, topic, person, days }) => {
     try {
-      const thoughts = await listThoughts(currentBrain().schema, { limit, type, topic, person, days });
+      const thoughts = await listThoughts(currentBrain().read, { limit, type, topic, person, days });
       if (!thoughts.length) return { content: [{ type: 'text' as const, text: 'No thoughts found.' }] };
       const formatted = thoughts.map((t, i) => {
         const m = t.metadata;
@@ -97,7 +97,7 @@ export function buildMcpServer(): McpServer {
     inputSchema: {},
   }, async () => {
     try {
-      const stats = await getStats(currentBrain().schema);
+      const stats = await getStats(currentBrain().read);
       const sort = (o: Record<string, number>): [string, number][] =>
         Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 10);
       const lines = [

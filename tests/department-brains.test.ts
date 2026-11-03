@@ -6,9 +6,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 process.env.BRAIN_KEY = 'scott-key';
 
 const keyRows: Record<string, { schema_name: string; person: string }> = {};
+let orgExists = false;
 vi.mock('../src/db.js', () => ({
   pool: {
     query: vi.fn(async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('to_regclass')) return { rows: [{ ok: orgExists }] };
       if (sql.includes('brain_admin.keys')) {
         const row = keyRows[params[0] as string];
         return { rows: row ? [row] : [] };
@@ -35,6 +37,7 @@ await mountMcp(app);
 
 keyRows[hashKey('kara-key')] = { schema_name: 'brain_coop', person: 'kara' };
 keyRows[hashKey('evil-key')] = { schema_name: 'brain', person: 'evil' };
+keyRows[hashKey('org-key')] = { schema_name: 'brain_org', person: 'sneaky' };
 keyRows[hashKey('inject-key')] = { schema_name: 'brain_x"; DROP TABLE y; --', person: 'x' };
 
 const sqlCalls = () => vi.mocked(pool.query).mock.calls.map((c) => c[0] as string).filter((s) => s.includes('.thoughts'));
@@ -90,6 +93,12 @@ describe('department keys over REST', () => {
 
   it('a key row pointing at brain itself is refused', async () => {
     const res = await app.request('/api/thoughts', { headers: { 'x-brain-key': 'evil-key' } });
+    expect(res.status).toBe(401);
+    expect(sqlCalls()).toHaveLength(0);
+  });
+
+  it('a key row pointing at the org layer is refused (nobody writes brain_org)', async () => {
+    const res = await app.request('/api/thoughts', { headers: { 'x-brain-key': 'org-key' } });
     expect(res.status).toBe(401);
     expect(sqlCalls()).toHaveLength(0);
   });
@@ -164,5 +173,40 @@ describe('MCP handshake (stateless, per request)', () => {
     const list = await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
     const text = await list.text();
     for (const t of ['capture_thought', 'search_thoughts', 'list_thoughts', 'thought_stats']) expect(text).toContain(t);
+  });
+});
+
+describe('the shared org reference (brain_org)', () => {
+  beforeEach(() => { vi.mocked(pool.query).mockClear(); clearKeyCache(); orgExists = true; });
+
+  it('a department key reads its own brain and brain_org together', async () => {
+    const res = await app.request('/api/thoughts/search?q=org%20chart', { headers: { 'x-brain-key': 'kara-key' } });
+    expect(res.status).toBe(200);
+    const read = sqlCalls().find((s) => s.includes('<=>'))!;
+    expect(read).toContain('"brain_coop".thoughts');
+    expect(read).toContain('"brain_org".thoughts');
+    expect(read).toContain('UNION ALL');
+    expect(read).not.toMatch(/"brain"\.thoughts/);
+  });
+
+  it('captures still go only to the department brain', async () => {
+    await app.request('/api/thoughts', {
+      method: 'POST', headers: { 'x-brain-key': 'kara-key', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: 'note' }),
+    });
+    const insert = vi.mocked(pool.query).mock.calls.find((c) => String(c[0]).includes('INSERT'))!;
+    expect(insert[0]).toContain('"brain_coop".thoughts');
+    expect(insert[0]).not.toContain('brain_org');
+  });
+
+  it("Scott's key does not read brain_org", async () => {
+    await app.request('/api/thoughts', { headers: { 'x-brain-key': 'scott-key' } });
+    expect(sqlCalls().some((s) => s.includes('brain_org'))).toBe(false);
+  });
+
+  it('before brain_org exists a department key reads only its own brain', async () => {
+    orgExists = false;
+    await app.request('/api/thoughts', { headers: { 'x-brain-key': 'kara-key' } });
+    expect(sqlCalls().some((s) => s.includes('brain_org'))).toBe(false);
   });
 });

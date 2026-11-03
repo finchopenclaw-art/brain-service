@@ -4,6 +4,7 @@ import { schemaFor, exclusionReason, renderReview, approvedIds } from '../script
 
 describe('schemaFor', () => {
   it('builds brain_<dept>', () => expect(schemaFor('coop')).toBe('brain_coop'));
+  it('reserves org for the shared org reference', () => expect(() => schemaFor('org')).toThrow(/reserved/));
   it('refuses anything that is not a plain slug', () => {
     for (const bad of ['', 'Coop', 'co-op', 'x', 'coop"; drop', '1coop', undefined]) expect(() => schemaFor(bad)).toThrow();
   });

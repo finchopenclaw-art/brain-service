@@ -6,6 +6,8 @@ export function schemaFor(dept) {
   if (!/^[a-z][a-z0-9]{1,30}$/.test(dept ?? '')) {
     throw new Error(`Department slug must be lowercase letters/digits, starting with a letter: ${dept}`);
   }
+  // brain_org is the shared org reference (load-org.mjs); no department may claim it.
+  if (dept === 'org') throw new Error('"org" is reserved for the shared org reference');
   return `brain_${dept}`;
 }
 

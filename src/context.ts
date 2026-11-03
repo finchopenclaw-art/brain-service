@@ -10,7 +10,18 @@ export interface BrainContext {
   schema: string;
   /** Who holds the key: set for per-person department keys, null for the original key. */
   person: string | null;
+  /**
+   * Schemas this key may READ: its own, plus the shared org reference
+   * (`brain_org`) for department keys once it exists. Writes only ever go to
+   * `schema`; nobody's key can write to brain_org (scripts/load-org.mjs owns it).
+   */
+  read: string[];
 }
+
+/** The shared, generated org reference every department brain can read. */
+export const ORG_SCHEMA = 'brain_org';
+/** Schemas a key row may never point at: Scott's brain and the org layer. */
+export const RESERVED_SCHEMAS: readonly string[] = ['brain', ORG_SCHEMA];
 
 const store = new AsyncLocalStorage<BrainContext>();
 

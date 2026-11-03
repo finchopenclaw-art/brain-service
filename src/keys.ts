@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { pool } from './db.js';
-import { SCHEMA_RE, type BrainContext } from './context.js';
+import { SCHEMA_RE, ORG_SCHEMA, RESERVED_SCHEMAS, type BrainContext } from './context.js';
 
 /**
  * Key → brain. The original BRAIN_KEY (env) is Scott's brain and Finch's, and
@@ -26,7 +26,7 @@ function sameKey(a: string, b: string): boolean {
 export async function resolveKey(key: string | undefined | null): Promise<BrainContext | null> {
   if (!key) return null;
   const legacy = process.env.BRAIN_KEY;
-  if (legacy && sameKey(key, legacy)) return { schema: 'brain', person: null };
+  if (legacy && sameKey(key, legacy)) return { schema: 'brain', person: null, read: ['brain'] };
 
   const hash = hashKey(key);
   const hit = cache.get(hash);
@@ -40,9 +40,11 @@ export async function resolveKey(key: string | undefined | null): Promise<BrainC
       [hash],
     );
     const row = res.rows[0] as { schema_name: string; person: string } | undefined;
-    // Never let a key row point at Scott's own brain, whatever the table says.
-    if (row && SCHEMA_RE.test(row.schema_name) && row.schema_name !== 'brain') {
-      ctx = { schema: row.schema_name, person: row.person };
+    // Never let a key row point at Scott's own brain or the org layer, whatever the table says.
+    if (row && SCHEMA_RE.test(row.schema_name) && !RESERVED_SCHEMAS.includes(row.schema_name)) {
+      const org = await pool.query(`SELECT to_regclass($1) IS NOT NULL AS ok`, [`${ORG_SCHEMA}.thoughts`]);
+      const read = org.rows[0]?.ok ? [row.schema_name, ORG_SCHEMA] : [row.schema_name];
+      ctx = { schema: row.schema_name, person: row.person, read };
     }
   } catch (err) {
     // brain_admin not created yet: only the original key works.
