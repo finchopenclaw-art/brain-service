@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { getEmbedding } from './embeddings.js';
 import { extractMetadata } from './metadata.js';
 import { insertThought, searchThoughts, listThoughts, getStats } from './thoughts.js';
-import { currentBrain, captureMetadata } from './context.js';
+import { currentBrain, captureMetadata, writableSchema } from './context.js';
 
 /** A fresh server per request (see mountMcp); tools are registered on each. */
 export function buildMcpServer(): McpServer {
@@ -19,11 +19,12 @@ export function buildMcpServer(): McpServer {
     },
   }, async ({ content }) => {
     try {
+      const schema = writableSchema();
       const [embedding, metadata] = await Promise.all([
         getEmbedding(content),
         extractMetadata(content),
       ]);
-      await insertThought(currentBrain().schema, content, embedding, captureMetadata(metadata, 'mcp'), 'mcp');
+      await insertThought(schema, content, embedding, captureMetadata(metadata, 'mcp'), 'mcp');
       let confirmation = `Captured as ${metadata.type}`;
       if (metadata.topics.length) confirmation += ` — ${metadata.topics.join(', ')}`;
       if (metadata.people.length) confirmation += ` | People: ${metadata.people.join(', ')}`;

@@ -3,22 +3,33 @@ import { getEmbedding } from './embeddings.js';
 import { extractMetadata } from './metadata.js';
 import { insertThought, searchThoughts, listThoughts, getStats } from './thoughts.js';
 import { resolveKey } from './keys.js';
-import { runWithBrain, currentBrain, captureMetadata } from './context.js';
+import { runWithBrain, currentBrain, captureMetadata, writableSchema } from './context.js';
+import { oauth, resolveBearer, wwwAuthenticate } from './oauth.js';
 
 if (!process.env.BRAIN_KEY) throw new Error('BRAIN_KEY environment variable is required');
 
 export const app = new Hono();
 
-// Auth middleware — applies to all routes. The key picks the brain (card #271):
-// the original BRAIN_KEY is `brain`, a department key is its own `brain_<dept>`.
-// `?key=` is accepted as well as the header because claude.ai custom connectors
-// can only carry a key in the URL (the way Open Brain's connector works).
+// Auth middleware — every route except sign-in itself. Two ways in (card #271):
+//  - a key (x-brain-key header or ?key=): the original BRAIN_KEY is `brain`, a
+//    department key is its own `brain_<dept>`;
+//  - a Bearer token from signing in through the portal (src/oauth.ts): the
+//    person's email decides the brain.
+// A 401 names the sign-in metadata, which is how Claude knows to start signing in.
 app.use('*', async (c, next) => {
-  const key = c.req.header('x-brain-key') ?? c.req.query('key');
-  const ctx = await resolveKey(key);
-  if (!ctx) return c.json({ error: 'Unauthorized' }, 401);
+  if (c.req.path.startsWith('/.well-known/') || c.req.path.startsWith('/oauth/')) return next();
+  const auth = c.req.header('authorization');
+  const ctx = auth?.startsWith('Bearer ')
+    ? await resolveBearer(auth.slice(7).trim())
+    : await resolveKey(c.req.header('x-brain-key') ?? c.req.query('key'));
+  if (!ctx) {
+    c.header('WWW-Authenticate', wwwAuthenticate());
+    return c.json({ error: 'Unauthorized' }, 401);
+  }
   await runWithBrain(ctx, () => next());
 });
+
+app.route('/', oauth);
 
 // REST: POST /api/thoughts
 app.post('/api/thoughts', async (c) => {
@@ -28,12 +39,13 @@ app.post('/api/thoughts', async (c) => {
   }
   const body = raw as { content?: string; source?: string };
   if (!body.content) return c.json({ error: 'content is required' }, 400);
+  if (!currentBrain().schema) return c.json({ error: 'No department brain to save into' }, 403);
   const source = body.source ?? 'platform';
   const [embedding, metadata] = await Promise.all([
     getEmbedding(body.content),
     extractMetadata(body.content),
   ]);
-  const id = await insertThought(currentBrain().schema, body.content, embedding, captureMetadata(metadata, source), source);
+  const id = await insertThought(writableSchema(), body.content, embedding, captureMetadata(metadata, source), source);
   return c.json({ id, type: metadata.type, topics: metadata.topics, captured: true }, 201);
 });
 

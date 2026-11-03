@@ -7,7 +7,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
  * BRAIN_KEY resolves to `brain`.
  */
 export interface BrainContext {
-  schema: string;
+  /** Where captures go; null for a signed-in staff member with no department brain (read-only). */
+  schema: string | null;
   /** Who holds the key: set for per-person department keys, null for the original key. */
   person: string | null;
   /**
@@ -40,6 +41,13 @@ export function currentBrain(): BrainContext {
 }
 
 /** Metadata for a new thought: a department key also records who captured it. */
+/** The schema to save into, or an error a person can understand. */
+export function writableSchema(): string {
+  const { schema } = currentBrain();
+  if (!schema) throw new Error('Your sign-in can read the CIESC org reference, but you have no department brain to save into. Ask Scott Cox to add you to one.');
+  return schema;
+}
+
 export function captureMetadata(metadata: object, source: string): Record<string, unknown> {
   const { person } = currentBrain();
   return person ? { ...metadata, source, captured_by: person } : { ...metadata, source };

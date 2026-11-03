@@ -6,12 +6,15 @@
 //   node scripts/new-brain.mjs key <dept> --person <name>     new key for one person; printed ONCE
 //   node scripts/new-brain.mjs revoke <dept> --person <name>  revoke that person's key(s)
 //   node scripts/new-brain.mjs list                           departments, people, counts
+//   node scripts/new-brain.mjs member <dept> --email <addr>   sign-in access: this email reaches brain_<dept>
+//   node scripts/new-brain.mjs unmember --email <addr>        back to the org reference only (signs them out)
+//   node scripts/new-brain.mjs migrate                        apply migrations/ (idempotent)
 //
 // The key is shown once and only its sha256 is stored. Revocation takes effect
 // within a minute (the service caches lookups for 60 s).
 import 'dotenv/config';
 import { randomBytes, createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { schemaFor } from './lib/share.mjs';
@@ -24,8 +27,35 @@ const die = (m) => { console.error(m); process.exit(1); };
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
 async function ensureAdmin(client) {
-  const sql = readFileSync(fileURLToPath(new URL('../migrations/2026-11-03-brain-admin.sql', import.meta.url)), 'utf8');
-  await client.query(sql);
+  const dir = fileURLToPath(new URL('../migrations/', import.meta.url));
+  for (const f of readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()) {
+    await client.query(readFileSync(dir + f, 'utf8'));
+  }
+}
+
+async function migrate(client) {
+  await ensureAdmin(client);
+  console.log('Migrations applied.');
+}
+
+async function member(client) {
+  const schema = schemaFor(dept);
+  const email = (flag('email') ?? die('--email is required')).toLowerCase();
+  if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/.test(email)) die(`Bad --email: ${email}`);
+  await ensureAdmin(client);
+  if (!(await schemaExists(client, schema))) die(`${schema} does not exist — run: create ${dept}`);
+  await client.query(
+    `INSERT INTO brain_admin.members (email, schema_name) VALUES ($1, $2)
+     ON CONFLICT (email) DO UPDATE SET schema_name = EXCLUDED.schema_name, added_at = NOW()`, [email, schema]);
+  console.log(`${email} → ${schema} (+ the org reference) when they sign in.`);
+}
+
+async function unmember(client) {
+  const email = (flag('email') ?? die('--email is required')).toLowerCase();
+  await ensureAdmin(client);
+  const r = await client.query(`DELETE FROM brain_admin.members WHERE email = $1`, [email]);
+  const t = await client.query(`UPDATE brain_admin.oauth_tokens SET revoked_at = NOW() WHERE email = $1 AND revoked_at IS NULL`, [email]);
+  console.log(`${email}: ${r.rowCount ? 'removed from its department brain' : 'was not a member'}; ${t.rowCount} sign-in token(s) revoked.`);
 }
 
 async function schemaExists(client, schema) {
@@ -82,12 +112,14 @@ async function list(client) {
     );
     console.log(`${s}: ${n.rows[0].n} thoughts (${n.rows[0].shared} shared from brain)`);
     for (const p of people.rows) {
-      console.log(`  ${p.person}  issued ${p.created_at.toISOString().slice(0, 10)}${p.revoked_at ? `  REVOKED ${p.revoked_at.toISOString().slice(0, 10)}` : ''}`);
+      console.log(`  key ${p.person}  issued ${p.created_at.toISOString().slice(0, 10)}${p.revoked_at ? `  REVOKED ${p.revoked_at.toISOString().slice(0, 10)}` : ''}`);
     }
+    const members = await client.query(`SELECT email FROM brain_admin.members WHERE schema_name = $1 ORDER BY email`, [s]);
+    for (const m of members.rows) console.log(`  sign-in ${m.email}`);
   }
 }
 
-const cmds = { create, key, revoke, list };
-if (!cmds[cmd]) die('usage: new-brain.mjs create|key|revoke <dept> [--person name] | list');
+const cmds = { create, key, revoke, list, member, unmember, migrate };
+if (!cmds[cmd]) die('usage: new-brain.mjs create|key|revoke|member <dept> [--person name | --email addr] | unmember --email addr | list | migrate');
 const client = await pool.connect();
 try { await cmds[cmd](client); } finally { client.release(); await pool.end(); }
