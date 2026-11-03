@@ -17,7 +17,11 @@ vi.mock('../src/db.js', () => ({
       }
       // Any thoughts query: report which table it hit.
       const m = sql.match(/"(brain[a-z0-9_]*)"\.thoughts/);
-      if (sql.startsWith('\n    SELECT') || sql.includes('<=>')) return { rows: [{ id: 't1', content: `from ${m?.[1]}`, metadata: { type: 'observation' }, source: 'mcp', created_at: '2026-11-03', similarity: 0.9 }] };
+      if (sql.startsWith('\n    SELECT') || sql.includes('<=>')) {
+        const rows = [{ id: 't1', content: `from ${m?.[1]}`, metadata: { type: 'observation' }, source: 'mcp', created_at: '2026-11-03', similarity: 0.9 }];
+        if (sql.includes('"brain_org".thoughts')) rows.push({ id: 't2', content: 'Kara reports to Kelly', metadata: { type: 'reference' }, source: 'org', created_at: '2026-11-03', similarity: 0.8 });
+        return { rows };
+      }
       if (sql.includes('INSERT')) return { rows: [{ id: `new-in-${m?.[1]}` }] };
       if (sql.includes('COUNT(*)')) return { rows: [{ total: 1, oldest: null, newest: null }] };
       return { rows: [{ id: 't1', content: `from ${m?.[1]}`, metadata: { type: 'observation' }, source: 'mcp', created_at: '2026-11-03' }] };
@@ -197,6 +201,12 @@ describe('the shared org reference (brain_org)', () => {
     const insert = vi.mocked(pool.query).mock.calls.find((c) => String(c[0]).includes('INSERT'))!;
     expect(insert[0]).toContain('"brain_coop".thoughts');
     expect(insert[0]).not.toContain('brain_org');
+  });
+
+  it('MCP search marks org-reference results as such', async () => {
+    const r = await mcpCall('kara-key', 'search_thoughts', { query: 'who does Kara report to' });
+    expect(r.text).toContain('From: CIESC org reference');
+    expect(r.text.match(/From: CIESC org reference/g)).toHaveLength(1);
   });
 
   it("Scott's key does not read brain_org", async () => {

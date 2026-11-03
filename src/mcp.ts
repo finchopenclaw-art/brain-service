@@ -54,6 +54,7 @@ export function buildMcpServer(): McpServer {
           `Captured: ${new Date(t.created_at).toLocaleDateString()}`,
           `Type: ${(m.type as string) || 'unknown'}`,
         ];
+        if (t.source === 'org') parts.push('From: CIESC org reference (shared with every department)');
         if (Array.isArray(m.topics) && m.topics.length) parts.push(`Topics: ${(m.topics as string[]).join(', ')}`);
         if (Array.isArray(m.people) && m.people.length) parts.push(`People: ${(m.people as string[]).join(', ')}`);
         if (Array.isArray(m.action_items) && m.action_items.length) parts.push(`Actions: ${(m.action_items as string[]).join('; ')}`);
