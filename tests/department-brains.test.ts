@@ -134,6 +134,23 @@ describe('department keys over MCP', () => {
     expect(r.text).toContain('from brain"');
   });
 
+  it('refuses a sensitive note in a department brain, and saves nothing', async () => {
+    vi.mocked(pool.query).mockClear();
+    const r = await mcpCall('kara-key', 'capture_thought', { content: 'The vendor portal password is Blue42' }, true);
+    expect(JSON.stringify(r)).toContain('Not saved');
+    expect(vi.mocked(pool.query).mock.calls.some(([sql]) => String(sql).includes('INSERT'))).toBe(false);
+  });
+
+  it('the department save tool says how checkpoints work; Scott\'s keeps its own text', async () => {
+    const list = async (key: string) => (await app.request(`/mcp?key=${key}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    })).text();
+    expect(await list('kara-key')).toContain('checkpoint');
+    expect(await list('scott-key')).not.toContain('checkpoint');
+  });
+
   it('capture via connector URL key lands in brain_coop with captured_by', async () => {
     const r = await mcpCall('kara-key', 'capture_thought', { content: 'Edge Public sends one workbook' }, true);
     expect(r.status).toBe(200);

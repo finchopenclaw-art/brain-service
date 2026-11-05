@@ -5,6 +5,7 @@ import { insertThought, searchThoughts, listThoughts, getStats } from './thought
 import { resolveKey } from './keys.js';
 import { runWithBrain, currentBrain, captureMetadata, writableSchema } from './context.js';
 import { oauth, resolveBearer, wwwAuthenticate } from './oauth.js';
+import { refusalFor } from './capture-guard.js';
 
 if (!process.env.BRAIN_KEY) throw new Error('BRAIN_KEY environment variable is required');
 
@@ -40,6 +41,8 @@ app.post('/api/thoughts', async (c) => {
   const body = raw as { content?: string; source?: string };
   if (!body.content) return c.json({ error: 'content is required' }, 400);
   if (!currentBrain().schema) return c.json({ error: 'No department brain to save into' }, 403);
+  const refusal = refusalFor(writableSchema(), body.content);
+  if (refusal) return c.json({ error: refusal }, 422);
   const source = body.source ?? 'platform';
   const [embedding, metadata] = await Promise.all([
     getEmbedding(body.content),

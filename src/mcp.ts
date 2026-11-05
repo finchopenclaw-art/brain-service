@@ -6,20 +6,33 @@ import { getEmbedding } from './embeddings.js';
 import { extractMetadata } from './metadata.js';
 import { insertThought, searchThoughts, listThoughts, getStats } from './thoughts.js';
 import { currentBrain, captureMetadata, writableSchema } from './context.js';
+import { refusalFor } from './capture-guard.js';
+
+/**
+ * How saving works in a shared department brain. Sits in the tool description
+ * because Claude reads that wherever the connector is on, with or without the
+ * department's Project instructions (card #271).
+ */
+export const DEPARTMENT_SAVE_RULES = 'Save a note to the department\'s shared brain. Everyone in the department can read it. Save right away, without asking first, when the person says "checkpoint" or asks to save something. For a checkpoint, look back over the whole conversation and write one dated note covering what was done, decisions and why, quirks or traps found, where things stand, and what is next, so it makes sense to someone who was not there. Use separate notes only for unrelated topics. Never save student information, HR or personnel matters, passwords or account numbers, and from a spreadsheet save what was learned, never its rows. Afterward say exactly what was saved and what was left out. If a save fails or is refused, say so plainly and show the reason.';
+
+const OWN_BRAIN_SAVE = 'Save a new thought to the brain. Generates an embedding and extracts metadata automatically. Use when the user wants to save notes, insights, decisions, or project state.';
 
 /** A fresh server per request (see mountMcp); tools are registered on each. */
 export function buildMcpServer(): McpServer {
   const mcpServer = new McpServer({ name: 'open-brain', version: '2.0.0' });
+  const ownBrain = currentBrain().schema === 'brain';
 
   mcpServer.registerTool('capture_thought', {
     title: 'Capture Thought',
-    description: 'Save a new thought to the brain. Generates an embedding and extracts metadata automatically. Use when the user wants to save notes, insights, decisions, or project state.',
+    description: ownBrain ? OWN_BRAIN_SAVE : DEPARTMENT_SAVE_RULES,
     inputSchema: {
       content: z.string().describe('The thought to capture — a clear, standalone statement that will make sense when retrieved later'),
     },
   }, async ({ content }) => {
     try {
       const schema = writableSchema();
+      const refusal = refusalFor(schema, content);
+      if (refusal) return { content: [{ type: 'text' as const, text: refusal }], isError: true };
       const [embedding, metadata] = await Promise.all([
         getEmbedding(content),
         extractMetadata(content),
