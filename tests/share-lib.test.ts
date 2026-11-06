@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // @ts-expect-error plain .mjs helper
-import { schemaFor, exclusionReason, renderReview, approvedIds } from '../scripts/lib/share.mjs';
+import { schemaFor, exclusionReason, renderReview, approvedIds, taggedBody, departmentNote } from '../scripts/lib/share.mjs';
 
 describe('schemaFor', () => {
   it('builds brain_<dept>', () => expect(schemaFor('coop')).toBe('brain_coop'));
@@ -40,4 +40,22 @@ describe('review file round trip', () => {
     expect(approvedIds(md)).toEqual(['11111111-1111-1111-1111-111111111111']);
   });
   it('ignores junk lines', () => expect(approvedIds('- [x] not-a-uuid\n# heading')).toEqual([]));
+});
+
+describe('taggedBody', () => {
+  it('takes the note from a tag that opens it', () => expect(taggedBody('[share:coop] CDW sent a corrected file', 'coop')).toBe('CDW sent a corrected file'));
+  it('ignores case and leading space', () => expect(taggedBody('  [SHARE:coop] Note', 'coop')).toBe('Note'));
+  it.each([
+    'Agreed rule: plain [share:coop] notes copy nightly',
+    '[ciesc-platform] checkpoint mentioning [share:coop] notes',
+    'no tag at all',
+  ])('leaves alone %s', (t) => expect(taggedBody(t, 'coop')).toBeNull());
+  it('another department does not count', () => expect(taggedBody('[share:media] Note', 'coop')).toBeNull());
+  it('a tag with nothing after it is no note', () => expect(taggedBody('[share:coop]  ', 'coop')).toBeNull());
+});
+
+describe('departmentNote', () => {
+  it('says who saved it and when', () =>
+    expect(departmentNote('Piazza sends late', 'koneil@ciesc.org', '2026-11-06T18:00:00Z', 'coop'))
+      .toBe('[coop-brain] Saved by koneil@ciesc.org on 2026-11-06: Piazza sends late'));
 });

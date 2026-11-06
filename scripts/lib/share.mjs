@@ -34,6 +34,22 @@ export function exclusionReason(content) {
 }
 
 /**
+ * The note a [share:<dept>] tag marks, without the tag, or null when it is untagged. The tag must OPEN the note:
+ * checkpoints mention "[share:coop]" while describing the rule, and those must not be copied.
+ */
+export function taggedBody(content, dept) {
+  const tag = `[share:${dept}]`;
+  const text = (content ?? '').trimStart();
+  if (text.slice(0, tag.length).toLowerCase() !== tag) return null;
+  return text.slice(tag.length).trim() || null;
+}
+
+/** A department save as it reads in Scott's brain: findable by slug, and clear about who saved it. */
+export function departmentNote(content, who, savedAt, dept) {
+  return `[${dept}-brain] Saved by ${who} on ${new Date(savedAt).toISOString().slice(0, 10)}: ${content}`;
+}
+
+/**
  * The review file Scott edits: one line per candidate,
  *   - [x] <uuid> · 2026-08-14 · first 220 chars…
  * Leave [x] to share, change it to [ ] (or delete the line) to hold back.
